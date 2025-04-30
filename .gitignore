@@ -1,0 +1,27 @@
+# Ignore Cargo's target directory
+/target/
+
+# Ignore Cargo.lock if you don't want to commit it (recommended for libraries)
+/Cargo.lock
+
+# Ignore build artifacts
+*.d
+
+# Ignore MacOS Finder metadata
+.DS_Store
+
+# Ignore IDEs and editor files
+.vscode/
+.idea/
+
+# Ignore environment-specific files
+.env
+
+# Ignore compiled binaries
+*.exe
+*.out
+*.app
+
+# Ignore Docker-related files
+docker-compose.yml
+
