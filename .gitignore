@@ -1,9 +1,9 @@
 # Ignore Cargo's target directory
 /target/
+/migration/target/
 
 # Ignore Cargo.lock if you don't want to commit it (recommended for libraries)
 /Cargo.lock
-
 # Ignore build artifacts
 *.d
 
@@ -24,4 +24,5 @@
 
 # Ignore Docker-related files
 docker-compose.yml
+
 

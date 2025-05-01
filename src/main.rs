@@ -1,12 +1,20 @@
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{
+    middleware::{ErrorHandlerResponse, Logger},
+    web, App, HttpResponse, HttpServer,
+};
+use actix_web::{Error, HttpRequest};
+
 use dotenv::dotenv;
+
+use jwt::JwtMiddleware;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
-use std::env;
+use std::{env, fmt::format};
 
 mod handle;
+mod jwt;
+mod post;
 mod user; // Ensure this module is included
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
@@ -19,17 +27,6 @@ async fn main() -> std::io::Result<()> {
     let db: DatabaseConnection = Database::connect(&database_url)
         .await
         .expect("Failed to connect to the database");
-    // Run the 'down' migration to drop the tables
-    match Migrator::down(&db, None).await {
-        Ok(_) => println!("Database tables dropped successfully."),
-        Err(e) => {
-            eprintln!("Failed to apply 'down' migration: {}", e);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Migration down failed",
-            ));
-        }
-    }
 
     // Run the 'up' migration to create the tables again
     match Migrator::up(&db, None).await {
@@ -42,15 +39,23 @@ async fn main() -> std::io::Result<()> {
             ));
         }
     }
+
     // Start the Actix Web server
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(db.clone())) // Share database connection with the app
+            .service(web::resource("/login").route(web::post().to(handle::login)))
+            .service(web::resource("/register").route(web::post().to(handle::register)))
             .wrap(Logger::new("%a %r %s %b %D %U %{User-Agent}i"))
-            .service(handle::hello)
-            .service(handle::create_user)
+            .service(
+                web::scope("")
+                    .wrap(JwtMiddleware)
+                    .route("/settings", web::get().to(handle::settings))
+                    .route("/update", web::put().to(handle::update))
+                    .route("/delete", web::delete().to(handle::delete)),
+            )
     })
-    .bind(("127.0.0.1", 8080))? // Bind to localhost on port 8080
+    .bind(("127.0.0.1", 8000))? // Bind to localhost on port 8080
     .run()
     .await
 }
