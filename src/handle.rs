@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use crate::jwt::hash_password;
 use crate::jwt::Claims;
-use crate::jwt::HashPassword;
-use crate::jwt::{generate_jwt, ValidateHash};
+use crate::jwt::{generate_jwt, vaildate_hash};
 use crate::post::ActiveModel as ActiveModel_todo;
 use crate::post::Column as PostColumn;
 use crate::post::Entity as Entity_post;
@@ -42,7 +42,7 @@ pub async fn register(db: web::Data<DbConn>, user: web::Json<UserCreate>) -> imp
     }
 
     // Haszowanie hasła przed zapisaniem
-    let hashed_password = HashPassword(&user.password);
+    let hashed_password = hash_password(&user.password);
 
     // Tworzymy nowego użytkownika
     let new_user = ActiveModel {
@@ -80,7 +80,7 @@ pub async fn login(db: web::Data<DbConn>, info: web::Json<UserCreate>) -> impl R
     match user {
         Some(user) => {
             // Sprawdzamy, czy hasło się zgadza
-            if ValidateHash(&info.password, &user.password) {
+            if vaildate_hash(&info.password, &user.password) {
                 let token = generate_jwt(&user.id.to_string());
                 HttpResponse::Ok().json(serde_json::json!({
                     "token": token,
@@ -136,7 +136,7 @@ pub async fn update(
     };
 
     // Zrób hash nowego hasła
-    let hashed_password = HashPassword(&user.password);
+    let hashed_password = hash_password(&user.password);
 
     // Aktualizuj dane
     let mut updated_user: ActiveModel = existing.into();

@@ -14,11 +14,11 @@ use std::{
     task::{Context, Poll},
 };
 
-pub fn HashPassword(password: &str) -> String {
+pub fn hash_password(password: &str) -> String {
     let hash = hash(password, DEFAULT_COST).unwrap();
     hash
 }
-pub fn ValidateHash(password: &str, hash: &str) -> bool {
+pub fn vaildate_hash(password: &str, hash: &str) -> bool {
     let validate = verify(password, hash).unwrap_or(false);
     validate
 }
