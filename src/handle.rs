@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::jwt::Claims;
 use crate::jwt::HashPassword;
 use crate::jwt::{generate_jwt, ValidateHash};
@@ -15,6 +17,7 @@ use sea_orm::DbErr;
 use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set}; // Dodaj ten import, aby móc używać eq
 use serde::Serialize;
+
 #[derive(Serialize)]
 pub struct UserWithPosts {
     pub id: i32,
@@ -327,7 +330,37 @@ pub async fn settings(db: web::Data<DbConn>, req: HttpRequest) -> impl Responder
                         .await;
 
                     return match user_with_post {
-                        Ok(data) => HttpResponse::Ok().json(data),
+                        Ok(data) => {
+                            let mut user_map: HashMap<i32, UserWithPosts> = HashMap::new();
+
+                            for (user, maybe_post) in data {
+                                let entry =
+                                    user_map.entry(user.id).or_insert_with(|| UserWithPosts {
+                                        id: user.id,
+                                        name: user.name.clone(),
+                                        lastname: user.lastname.clone(),
+                                        age: user.age,
+                                        email: user.email.clone(),
+                                        posts: Some(vec![]),
+                                    });
+
+                                if let Some(post) = maybe_post {
+                                    // Przekształcenie post::Model -> PostCreate, jeśli potrzebne
+                                    let converted_post = PostCreate {
+                                        title: post.title.clone(),
+                                        content: post.content.clone(),
+                                        // inne pola, jeśli są
+                                    };
+
+                                    if let Some(ref mut posts) = entry.posts {
+                                        posts.push(converted_post);
+                                    }
+                                }
+                            }
+
+                            let result: Vec<UserWithPosts> = user_map.into_values().collect();
+                            HttpResponse::Ok().json(result)
+                        }
                         Err(_) => HttpResponse::InternalServerError().body("Database error"),
                     };
                 }
