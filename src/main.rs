@@ -1,15 +1,11 @@
-use actix_web::{
-    middleware::{ErrorHandlerResponse, Logger},
-    web, App, HttpResponse, HttpServer,
-};
-use actix_web::{Error, HttpRequest};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 
 use dotenv::dotenv;
 
 use jwt::JwtMiddleware;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
-use std::{env, fmt::format};
+use std::env;
 
 mod handle;
 mod jwt;
@@ -43,7 +39,6 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(db.clone())) // Share database connection with the app
-            .service(web::resource("/ps").route(web::get().to(handle::get_users_ws)))
             .service(web::resource("/all").route(web::get().to(handle::get_users)))
             .service(web::resource("/login").route(web::post().to(handle::login)))
             .service(web::resource("/register").route(web::post().to(handle::register)))

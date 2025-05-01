@@ -15,7 +15,6 @@ use std::{
 };
 
 pub fn HashPassword(password: &str) -> String {
-    let salt = env::var("JWT_SECRET").unwrap();
     let hash = hash(password, DEFAULT_COST).unwrap();
     hash
 }

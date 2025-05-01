@@ -1,14 +1,12 @@
 use crate::jwt::Claims;
 use crate::jwt::HashPassword;
 use crate::jwt::{generate_jwt, ValidateHash};
-use crate::post;
 use crate::post::ActiveModel as ActiveModel_todo;
 use crate::post::Column as PostColumn;
 use crate::post::Entity as Entity_post;
 use crate::post::PostCreate;
 use crate::user::{self, UserCreate};
 use crate::user::{ActiveModel, Entity};
-use actix_web::get;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use sea_orm::ColumnTrait;
@@ -17,7 +15,6 @@ use sea_orm::DbErr;
 use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set}; // Dodaj ten import, aby móc używać eq
 use serde::Serialize;
-
 #[derive(Serialize)]
 pub struct UserWithPosts {
     pub id: i32,
@@ -25,15 +22,8 @@ pub struct UserWithPosts {
     pub lastname: String,
     pub age: i32,
     pub email: String,
-    pub posts: Option<Vec<PostOut>>,
+    pub posts: Option<Vec<PostCreate>>,
 }
-
-#[derive(Serialize)]
-pub struct PostOut {
-    pub title: String,
-    pub content: String,
-}
-
 pub async fn register(db: web::Data<DbConn>, user: web::Json<UserCreate>) -> impl Responder {
     // Sprawdzamy, czy użytkownik z takim emailem już istnieje
     let existing_user = Entity::find()
@@ -66,7 +56,7 @@ pub async fn register(db: web::Data<DbConn>, user: web::Json<UserCreate>) -> imp
 
     // Uzyskanie ID wstawionego użytkownika
     // Inna opcja, zamiast korzystać z deprecated `last_insert_id`, można dostać ID z inserted_user:
-    let user_id = inserted_user.last_insert_id; // Użyj `unwrap_or_default` w razie braku ID
+    let _user_id = inserted_user.last_insert_id; // Użyj `unwrap_or_default` w razie braku ID
 
     // Możesz zwrócić użytkownikowi token po zapisaniu
     //let token = generate_jwt(&user_id.to_string());
@@ -99,36 +89,6 @@ pub async fn login(db: web::Data<DbConn>, info: web::Json<UserCreate>) -> impl R
         }
         None => HttpResponse::NotFound().body("User not found"),
     }
-}
-
-pub async fn settings(db: web::Data<DbConn>, req: HttpRequest) -> impl Responder {
-    let auth_header = req
-        .headers()
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok());
-
-    if let Some(auth_header) = auth_header {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            // Dekoduj token
-            if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
-                token,
-                &jsonwebtoken::DecodingKey::from_secret(
-                    std::env::var("JWT_SECRET").unwrap().as_bytes(),
-                ),
-                &jsonwebtoken::Validation::default(),
-            ) {
-                // Parsujemy user_id z pola `sub`
-                let user_id = token_data.claims.sub.parse::<i32>().unwrap_or(0);
-
-                // Szukamy użytkownika
-                if let Ok(Some(user)) = Entity::find_by_id(user_id).one(&**db).await {
-                    return HttpResponse::Ok().json(user);
-                }
-            }
-        }
-    }
-
-    HttpResponse::Unauthorized().body("Invalid or missing token")
 }
 
 pub async fn update(
@@ -231,13 +191,6 @@ pub async fn delete(db: web::Data<DbConn>, req: HttpRequest) -> impl Responder {
 
     HttpResponse::Unauthorized().body("Invalid or missing token")
 }
-// funkcja na określony limit czasu
-pub async fn get_users(db: web::Data<DbConn>) -> impl Responder {
-    match Entity::find().all(&**db).await {
-        Ok(users) => HttpResponse::Ok().json(users),
-        Err(_) => HttpResponse::InternalServerError().body("Failed to fetch users"),
-    }
-}
 
 pub async fn add_post(
     db: web::Data<DbConn>,
@@ -324,7 +277,7 @@ pub async fn get_users_with_posts(db: web::Data<DbConn>) -> Result<Vec<UserWithP
             posts: Some(
                 posts
                     .into_iter()
-                    .map(|p| PostOut {
+                    .map(|p| PostCreate {
                         title: p.title,
                         content: p.content, // Fix the content mapping
                     })
@@ -335,10 +288,52 @@ pub async fn get_users_with_posts(db: web::Data<DbConn>) -> Result<Vec<UserWithP
 
     Ok(result)
 }
-pub async fn get_users_ws(db: web::Data<DbConn>) -> impl Responder {
+// funkcja na określony limit czasu
+pub async fn get_users(db: web::Data<DbConn>) -> impl Responder {
     // Corrected line where we pass db as web::Data<DbConn> directly
     match get_users_with_posts(db).await {
         Ok(users) => HttpResponse::Ok().json(users),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
+}
+
+pub async fn settings(db: web::Data<DbConn>, req: HttpRequest) -> impl Responder {
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    if let Some(auth_header) = auth_header {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            // Decode token
+            if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
+                token,
+                &jsonwebtoken::DecodingKey::from_secret(
+                    std::env::var("JWT_SECRET").unwrap().as_bytes(),
+                ),
+                &jsonwebtoken::Validation::default(),
+            ) {
+                // Parse user_id from `sub`
+                let user_id = match token_data.claims.sub.parse::<i32>() {
+                    Ok(id) => id,
+                    Err(_) => return HttpResponse::Unauthorized().body("Invalid user ID in token"),
+                };
+
+                // Look for user
+                if let Ok(Some(_user)) = Entity::find_by_id(user_id).one(&**db).await {
+                    let user_with_post = Entity::find_by_id(user_id)
+                        .find_also_related(Entity_post)
+                        .all(&**db)
+                        .await;
+
+                    return match user_with_post {
+                        Ok(data) => HttpResponse::Ok().json(data),
+                        Err(_) => HttpResponse::InternalServerError().body("Database error"),
+                    };
+                }
+            }
+        }
+    }
+
+    HttpResponse::Unauthorized().body("Invalid or missing token")
 }
