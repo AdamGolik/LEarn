@@ -39,20 +39,26 @@ async fn main() -> std::io::Result<()> {
             ));
         }
     }
-
     // Start the Actix Web server
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(db.clone())) // Share database connection with the app
+            .service(web::resource("/ps").route(web::get().to(handle::get_users_ws)))
+            .service(web::resource("/all").route(web::get().to(handle::get_users)))
             .service(web::resource("/login").route(web::post().to(handle::login)))
             .service(web::resource("/register").route(web::post().to(handle::register)))
             .wrap(Logger::new("%a %r %s %b %D %U %{User-Agent}i"))
             .service(
-                web::scope("")
+                web::scope("/user")
                     .wrap(JwtMiddleware)
                     .route("/settings", web::get().to(handle::settings))
                     .route("/update", web::put().to(handle::update))
                     .route("/delete", web::delete().to(handle::delete)),
+            )
+            .service(
+                web::scope("/todos")
+                    .wrap(JwtMiddleware)
+                    .route("/add", web::post().to(handle::add_post)),
             )
     })
     .bind(("127.0.0.1", 8000))? // Bind to localhost on port 8080

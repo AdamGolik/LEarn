@@ -1,14 +1,39 @@
 use crate::jwt::Claims;
 use crate::jwt::HashPassword;
 use crate::jwt::{generate_jwt, ValidateHash};
+use crate::post;
+use crate::post::ActiveModel as ActiveModel_todo;
+use crate::post::Column as PostColumn;
+use crate::post::Entity as Entity_post;
+use crate::post::PostCreate;
 use crate::user::{self, UserCreate};
 use crate::user::{ActiveModel, Entity};
+use actix_web::get;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use sea_orm::ColumnTrait;
 use sea_orm::DbConn;
+use sea_orm::DbErr;
 use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set}; // Dodaj ten import, aby móc używać eq
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct UserWithPosts {
+    pub id: i32,
+    pub name: String,
+    pub lastname: String,
+    pub age: i32,
+    pub email: String,
+    pub posts: Option<Vec<PostOut>>,
+}
+
+#[derive(Serialize)]
+pub struct PostOut {
+    pub title: String,
+    pub content: String,
+}
+
 pub async fn register(db: web::Data<DbConn>, user: web::Json<UserCreate>) -> impl Responder {
     // Sprawdzamy, czy użytkownik z takim emailem już istnieje
     let existing_user = Entity::find()
@@ -206,4 +231,114 @@ pub async fn delete(db: web::Data<DbConn>, req: HttpRequest) -> impl Responder {
 
     HttpResponse::Unauthorized().body("Invalid or missing token")
 }
-// funkcja na określony limit czasu 
+// funkcja na określony limit czasu
+pub async fn get_users(db: web::Data<DbConn>) -> impl Responder {
+    match Entity::find().all(&**db).await {
+        Ok(users) => HttpResponse::Ok().json(users),
+        Err(_) => HttpResponse::InternalServerError().body("Failed to fetch users"),
+    }
+}
+
+pub async fn add_post(
+    db: web::Data<DbConn>,
+    req: HttpRequest,
+    post: web::Json<PostCreate>,
+) -> impl Responder {
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    if let Some(auth_header) = auth_header {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            // Dekoduj token JWT
+            let jwt_secret = std::env::var("JWT_SECRET").unwrap();
+            let token_data = decode::<Claims>(
+                token,
+                &DecodingKey::from_secret(jwt_secret.as_bytes()),
+                &Validation::default(),
+            );
+
+            if let Ok(token_data) = token_data {
+                let user_id = token_data.claims.sub.parse::<i32>().unwrap_or(0);
+
+                // Sprawdź, czy użytkownik istnieje
+                match Entity::find_by_id(user_id).one(&**db).await {
+                    Ok(Some(_user)) => {
+                        // Sprawdź czy post o takim tytule już istnieje
+                        let existing_post = Entity_post::find()
+                            .filter(PostColumn::Title.eq(&post.title))
+                            .one(&**db)
+                            .await;
+
+                        if let Ok(Some(_)) = existing_post {
+                            return HttpResponse::BadRequest().body("Post already exists");
+                        }
+
+                        // Tworzymy i zapisujemy nowy post
+                        let new_post = ActiveModel_todo {
+                            title: Set(post.title.clone()),
+                            content: Set(post.content.clone()),
+                            user_id: Set(user_id),
+                            ..Default::default()
+                        };
+
+                        match new_post.insert(&**db).await {
+                            Ok(saved_post) => HttpResponse::Created().json(saved_post),
+                            Err(e) => {
+                                println!("Post insert error: {:?}", e);
+                                HttpResponse::InternalServerError().body("Failed to save post")
+                            }
+                        }
+                    }
+                    Ok(None) => HttpResponse::NotFound().body("User not found"),
+                    Err(_) => HttpResponse::InternalServerError().body("Database error"),
+                }
+            } else {
+                HttpResponse::Unauthorized().body("Invalid token")
+            }
+        } else {
+            HttpResponse::Unauthorized().body("Missing Bearer token")
+        }
+    } else {
+        HttpResponse::Unauthorized().body("Authorization header missing")
+    }
+}
+
+pub async fn get_users_with_posts(db: web::Data<DbConn>) -> Result<Vec<UserWithPosts>, DbErr> {
+    let users = Entity::find()
+        .find_with_related(Entity_post)
+        .all(&**db)
+        .await?;
+
+    let result = users
+        .into_iter()
+        .map(|(u, posts)| UserWithPosts {
+            id: u.id,
+            name: u.name,
+            lastname: u.lastname,
+            age: u.age,
+            email: u.email,
+
+            // Correct the Post mapping issue
+            posts: Some(
+                posts
+                    .into_iter()
+                    .map(|p| PostOut {
+                        title: p.title,
+                        content: p.content, // Fix the content mapping
+                    })
+                    .collect(),
+            ),
+        })
+        .collect();
+
+    Ok(result)
+}
+pub async fn get_users_ws(db: web::Data<DbConn>) -> impl Responder {
+    // Corrected line where we pass db as web::Data<DbConn> directly
+    match get_users_with_posts(db).await {
+        Ok(users) => HttpResponse::Ok().json(users),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}

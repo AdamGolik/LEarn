@@ -35,3 +35,4 @@ impl Related<super::post::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+

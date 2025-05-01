@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 pub struct PostCreate {
     pub title: String,
     pub content: String,
-    pub user_id: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Serialize, Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "posts")]
 pub struct Model {
     #[sea_orm(primary_key)]
