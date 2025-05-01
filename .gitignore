@@ -1,9 +1,9 @@
 # Ignore Cargo's target directory
-/target/
-/migration/target/
+api/target/
+api/migration/target/
 
 # Ignore Cargo.lock if you don't want to commit it (recommended for libraries)
-/Cargo.lock
+api/Cargo.lock
 # Ignore build artifacts
 *.d
 
