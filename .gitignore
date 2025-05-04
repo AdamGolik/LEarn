@@ -22,7 +22,5 @@ api/Cargo.lock
 *.out
 *.app
 
-# Ignore Docker-related files
-docker-compose.yml
 
 
